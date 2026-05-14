@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meal Planner 1: Summary & Export</title>
+    <title>Meal Planner 1: Quick Navigation</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        body { background-color: #f1f5f9; font-family: sans-serif; overflow-x: hidden; }
+        body { background-color: #f1f5f9; font-family: sans-serif; overflow-x: hidden; scroll-behavior: smooth; }
         .floor-canvas { 
             background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
             background-size: 30px 30px;
@@ -27,6 +27,15 @@
         .custom-scroll::-webkit-scrollbar { width: 6px; }
         .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        .sticky-action-bar {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background-color: rgba(241, 245, 249, 0.95);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid #e2e8f0;
+        }
     </style>
 </head>
 <body>
@@ -73,6 +82,7 @@
             const [hoveredId, setHoveredId] = useState(null);
             const [draggingId, setDraggingId] = useState(null);
             const canvasRef = useRef(null);
+            const containerRef = useRef(null);
 
             const [menu, setMenu] = useState(() => {
                 const saved = localStorage.getItem(STORAGE_KEY_MENU);
@@ -82,13 +92,44 @@
             const [tables, setTables] = useState(() => {
                 const saved = localStorage.getItem(STORAGE_KEY_LAYOUT);
                 if (saved) return JSON.parse(saved);
-                return Array.from({ length: 6 }, (_, i) => ({ 
-                    id: i + 1, guests: [], x: 20 + (i * 130) % 600, y: 20 + Math.floor(i / 3) * 150 
-                }));
+                return [{ id: 1, guests: [], x: 50, y: 50 }];
             });
 
             useEffect(() => { localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(tables)); }, [tables]);
             useEffect(() => { localStorage.setItem(STORAGE_KEY_MENU, JSON.stringify(menu)); }, [menu]);
+
+            const addTable = () => {
+                const nextId = tables.length > 0 ? Math.max(...tables.map(t => t.id)) + 1 : 1;
+                const newTable = {
+                    id: nextId,
+                    guests: [],
+                    x: 50 + (tables.length * 40) % 400,
+                    y: 50 + (tables.length * 40) % 300
+                };
+                setTables([...tables, newTable]);
+            };
+
+            const removeTable = (id) => {
+                if (window.confirm(`Are you sure you want to remove Table ${id}?`)) {
+                    setTables(tables.filter(t => t.id !== id));
+                }
+            };
+
+            const jumpToTable = (id) => {
+                const element = document.getElementById(`table-card-${id}`);
+                if (element) {
+                    const offset = 100; // Offset for sticky bar
+                    const bodyRect = document.body.getBoundingClientRect().top;
+                    const elementRect = element.getBoundingClientRect().top;
+                    const elementPosition = elementRect - bodyRect;
+                    const offsetPosition = elementPosition - offset;
+
+                    window.scrollTo({
+                        top: offsetPosition,
+                        behavior: 'smooth'
+                    });
+                }
+            };
 
             const handleNameStringChange = (tableId, val) => {
                 const names = val.split(',').map(n => n.trim());
@@ -123,7 +164,6 @@
                 setTables(prev => prev.map(t => t.id === draggingId ? { ...t, x: e.clientX - rect.left - 48, y: e.clientY - rect.top - 48 } : t));
             };
 
-            // Summary Logic
             const getTally = () => {
                 const totals = { starters: {}, mains: {}, desserts: {}, totalGuests: 0, dietaryNotes: [] };
                 tables.forEach(t => {
@@ -139,27 +179,16 @@
                 return totals;
             };
 
-            const generateCSV = () => {
-                let csv = "Table#Name#Starter#Main#Dessert#Dietary\n";
-                tables.forEach(t => {
-                    t.guests.forEach(g => {
-                        if (!g.name) return;
-                        csv += `${t.id}#${g.name}#${g.starter || ''}#${g.main || ''}#${g.dessert || ''}#${g.dietary || ''}\n`;
-                    });
-                });
-                return csv;
-            };
-
             const tally = getTally();
 
             return (
-                <div className="p-6 max-w-7xl mx-auto h-screen flex flex-col">
+                <div className="p-6 max-w-7xl mx-auto min-h-screen flex flex-col">
                     <header className="flex justify-between items-center mb-6">
                         <h1 className="text-2xl font-bold text-slate-800 font-serif">Meal Planner 1</h1>
                         <div className="flex bg-slate-200 p-1 rounded-xl shadow-inner">
                             {['input', 'menu', 'plan', 'summary'].map(v => (
                                 <button key={v} onClick={() => setView(v)} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${view === v ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>
-                                    {v === 'input' ? 'Guests' : v === 'menu' ? 'Menu' : v === 'plan' ? 'Floor Plan' : 'Summary & Export'}
+                                    {v === 'input' ? 'Guests' : v === 'menu' ? 'Menu' : v === 'plan' ? 'Floor Plan' : 'Summary'}
                                 </button>
                             ))}
                         </div>
@@ -171,7 +200,7 @@
                                 <div key={cat} className="bg-white p-6 rounded-xl border shadow-sm">
                                     <h2 className="capitalize font-bold mb-4 text-slate-700">{cat}</h2>
                                     {menu[cat].map((item, i) => (
-                                        <input key={i} className="w-full p-2 border rounded mb-2 text-sm" value={item} onChange={(e) => {
+                                        <input key={i} className="w-full p-2 border rounded mb-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none" value={item} onChange={(e) => {
                                             const next = [...menu[cat]]; next[i] = e.target.value;
                                             setMenu({...menu, [cat]: next});
                                         }}/>
@@ -183,30 +212,58 @@
                     )}
 
                     {view === 'input' && (
-                        <div className="flex-1 overflow-y-auto space-y-8 pb-20 custom-scroll">
-                            {tables.map(table => (
-                                <div key={table.id} className="bg-white p-6 rounded-xl border shadow-sm grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                    <div className="lg:col-span-1 border-r pr-8">
-                                        <h2 className="font-bold text-lg text-slate-800 mb-4">Table {table.id}</h2>
-                                        <textarea className="w-full p-3 border rounded h-32 text-sm bg-slate-50" value={table.guests.map(g => g.name).join(', ')} onChange={(e) => handleNameStringChange(table.id, e.target.value)} placeholder="Names..."/>
-                                        <div className="flex justify-center mt-6"><TableVisual table={table} /></div>
-                                    </div>
-                                    <div className="lg:col-span-2 space-y-2">
-                                        {table.guests.map((g, i) => (
-                                            <div key={i} className="flex gap-2 items-center bg-white p-2 rounded border shadow-sm">
-                                                <span className="w-24 text-[11px] font-bold text-slate-700 truncate">{g.name}</span>
-                                                {['starter', 'main', 'dessert'].map(course => (
-                                                    <select key={course} className="text-[10px] p-1 border rounded w-28" value={g[course]} onChange={(e) => updateGuest(table.id, i, course, e.target.value)}>
-                                                        <option value="">{course}...</option>
-                                                        {menu[course + 's'].filter(m => m).map(m => <option key={m} value={m}>{m}</option>)}
-                                                    </select>
-                                                ))}
-                                                <input className="flex-1 text-[10px] p-1 border rounded" placeholder="Dietary..." value={g.dietary} onChange={(e) => updateGuest(table.id, i, 'dietary', e.target.value)}/>
-                                            </div>
+                        <div className="flex-1 pb-20">
+                            <div className="sticky-action-bar py-3 px-4 rounded-xl flex justify-between items-center mb-8 shadow-sm">
+                                <div className="flex items-center gap-4">
+                                    <select 
+                                        onChange={(e) => jumpToTable(e.target.value)}
+                                        className="text-xs p-2 border rounded-lg bg-white font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-400"
+                                        value=""
+                                    >
+                                        <option value="" disabled>Jump to Table...</option>
+                                        {tables.map(t => (
+                                            <option key={t.id} value={t.id}>Table {t.id} ({t.guests.filter(g => g.name).length} guests)</option>
                                         ))}
-                                    </div>
+                                    </select>
+                                    <button onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})} className="text-[10px] font-bold text-slate-400 hover:text-blue-600 uppercase transition-colors">↑ Top</button>
                                 </div>
-                            ))}
+
+                                <div className="flex items-center gap-6">
+                                    <div className="hidden md:block text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                        Total Guests: <span className="text-blue-600">{tally.totalGuests}</span>
+                                    </div>
+                                    <button onClick={addTable} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-md transition-all">
+                                        + Add Table
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-12">
+                                {tables.map(table => (
+                                    <div key={table.id} id={`table-card-${table.id}`} className="bg-white p-6 rounded-xl border shadow-sm grid grid-cols-1 lg:grid-cols-3 gap-8 relative transition-all hover:border-blue-100">
+                                        <button onClick={() => removeTable(table.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 font-bold text-xl px-2 transition-colors">×</button>
+                                        <div className="lg:col-span-1 border-r pr-8">
+                                            <h2 className="font-bold text-lg text-slate-800 mb-4">Table {table.id}</h2>
+                                            <textarea className="w-full p-3 border rounded h-32 text-sm bg-slate-50 focus:ring-2 focus:ring-blue-400 outline-none" value={table.guests.map(g => g.name).join(', ')} onChange={(e) => handleNameStringChange(table.id, e.target.value)} placeholder="Alice, Bob, Charlie..."/>
+                                            <div className="flex justify-center mt-6"><TableVisual table={table} /></div>
+                                        </div>
+                                        <div className="lg:col-span-2 space-y-2">
+                                            {table.guests.map((g, i) => (
+                                                <div key={i} className="flex gap-2 items-center bg-white p-2 rounded border shadow-sm">
+                                                    <span className="w-24 text-[11px] font-bold text-slate-700 truncate">{g.name || `Guest ${i+1}`}</span>
+                                                    {['starter', 'main', 'dessert'].map(course => (
+                                                        <select key={course} className="text-[10px] p-1 border rounded w-28 bg-slate-50" value={g[course]} onChange={(e) => updateGuest(table.id, i, course, e.target.value)}>
+                                                            <option value="">{course}...</option>
+                                                            {menu[course + 's'].filter(m => m).map(m => <option key={m} value={m}>{m}</option>)}
+                                                        </select>
+                                                    ))}
+                                                    <input className="flex-1 text-[10px] p-1 border rounded" placeholder="Dietary..." value={g.dietary} onChange={(e) => updateGuest(table.id, i, 'dietary', e.target.value)}/>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
 
@@ -235,7 +292,7 @@
                     )}
 
                     {view === 'summary' && (
-                        <div className="flex-1 overflow-y-auto space-y-6 pb-20 custom-scroll">
+                        <div className="flex-1 space-y-6 pb-20">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="bg-white p-6 rounded-xl border shadow-sm">
                                     <h2 className="font-bold text-slate-800 mb-4 border-b pb-2">Kitchen Count (Total: {tally.totalGuests})</h2>
@@ -257,9 +314,12 @@
                                     </ul>
                                 </div>
                                 <div className="bg-white p-6 rounded-xl border shadow-sm">
-                                    <h2 className="font-bold text-slate-800 mb-4 border-b pb-2">Export Data (# Separated)</h2>
+                                    <h2 className="font-bold text-slate-800 mb-4 border-b pb-2 tracking-tight">Export Data (# Separated)</h2>
                                     <p className="text-[10px] text-slate-500 mb-4 italic">Copy and paste this into Excel or Google Sheets. Use "Split Text to Columns" with # as the delimiter.</p>
-                                    <textarea readOnly className="w-full h-96 p-4 bg-slate-50 border rounded font-mono text-[10px]" value={generateCSV()}/>
+                                    <textarea readOnly className="w-full h-96 p-4 bg-slate-50 border rounded font-mono text-[10px]" value={
+                                        "Table#Name#Starter#Main#Dessert#Dietary\n" + 
+                                        tables.flatMap(t => t.guests.filter(g => g.name).map(g => `${t.id}#${g.name}#${g.starter}#${g.main}#${g.dessert}#${g.dietary}`)).join("\n")
+                                    }/>
                                 </div>
                             </div>
                         </div>
@@ -273,4 +333,3 @@
     </script>
 </body>
 </html>
-
