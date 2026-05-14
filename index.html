@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meal Planner 1: Quick Navigation</title>
+    <title>Wedding Manager</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -36,6 +36,23 @@
             backdrop-filter: blur(12px);
             border-bottom: 1px solid #e2e8f0;
         }
+        .editable-title {
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            /* Doubled character width visually */
+            min-width: 400px;
+        }
+        .editable-title:hover {
+            border-bottom: 1px dashed #cbd5e1;
+            background-color: rgba(255,255,255,0.5);
+        }
+        .editable-title:focus {
+            background-color: white;
+            border: 1px solid #3b82f6;
+            outline: none;
+            border-radius: 4px;
+            padding: 0 8px;
+        }
     </style>
 </head>
 <body>
@@ -46,6 +63,7 @@
 
         const STORAGE_KEY_LAYOUT = 'wedding_planner_persistent_layout';
         const STORAGE_KEY_MENU = 'wedding_planner_persistent_menu';
+        const STORAGE_KEY_TITLE = 'wedding_planner_persistent_title';
 
         const TableVisual = ({ table, size = "large" }) => {
             const guests = table.guests || [];
@@ -82,7 +100,10 @@
             const [hoveredId, setHoveredId] = useState(null);
             const [draggingId, setDraggingId] = useState(null);
             const canvasRef = useRef(null);
-            const containerRef = useRef(null);
+
+            const [appTitle, setAppTitle] = useState(() => {
+                return localStorage.getItem(STORAGE_KEY_TITLE) || 'Meal Planner';
+            });
 
             const [menu, setMenu] = useState(() => {
                 const saved = localStorage.getItem(STORAGE_KEY_MENU);
@@ -97,6 +118,7 @@
 
             useEffect(() => { localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(tables)); }, [tables]);
             useEffect(() => { localStorage.setItem(STORAGE_KEY_MENU, JSON.stringify(menu)); }, [menu]);
+            useEffect(() => { localStorage.setItem(STORAGE_KEY_TITLE, appTitle); }, [appTitle]);
 
             const addTable = () => {
                 const nextId = tables.length > 0 ? Math.max(...tables.map(t => t.id)) + 1 : 1;
@@ -118,16 +140,12 @@
             const jumpToTable = (id) => {
                 const element = document.getElementById(`table-card-${id}`);
                 if (element) {
-                    const offset = 100; // Offset for sticky bar
+                    const offset = 100;
                     const bodyRect = document.body.getBoundingClientRect().top;
                     const elementRect = element.getBoundingClientRect().top;
                     const elementPosition = elementRect - bodyRect;
                     const offsetPosition = elementPosition - offset;
-
-                    window.scrollTo({
-                        top: offsetPosition,
-                        behavior: 'smooth'
-                    });
+                    window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
                 }
             };
 
@@ -183,8 +201,14 @@
 
             return (
                 <div className="p-6 max-w-7xl mx-auto min-h-screen flex flex-col">
-                    <header className="flex justify-between items-center mb-6">
-                        <h1 className="text-2xl font-bold text-slate-800 font-serif">Meal Planner 1</h1>
+                    <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                        <input 
+                            className="text-2xl font-bold text-slate-800 font-serif editable-title px-1 w-full md:w-auto"
+                            value={appTitle}
+                            onChange={(e) => setAppTitle(e.target.value)}
+                            placeholder="Event Name..."
+                            size="40" 
+                        />
                         <div className="flex bg-slate-200 p-1 rounded-xl shadow-inner">
                             {['input', 'menu', 'plan', 'summary'].map(v => (
                                 <button key={v} onClick={() => setView(v)} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${view === v ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>
