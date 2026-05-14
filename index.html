@@ -3,38 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wedding Planner: Pro Floor Plan</title>
+    <title>Meal Planner 1: Summary & Export</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        body { background-color: #f1f5f9; font-family: sans-serif; overflow: hidden; }
+        body { background-color: #f1f5f9; font-family: sans-serif; overflow-x: hidden; }
         .floor-canvas { 
             background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
             background-size: 30px 30px;
-            height: 75vh;
+            height: 70vh;
             position: relative;
             border: 2px solid #cbd5e1;
             border-radius: 12px;
             background-color: #f8fafc;
             touch-action: none;
         }
-        .draggable-table { 
-            cursor: grab; 
-            user-select: none;
-            touch-action: none;
-        }
+        .draggable-table { cursor: grab; user-select: none; touch-action: none; }
         .draggable-table:active { cursor: grabbing; }
-        /* Tooltip animation */
-        .guest-dropdown {
-            animation: fadeIn 0.2s ease-out;
-            pointer-events: none; /* Let clicks pass through to the table */
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px) translateX(-50%); }
-            to { opacity: 1; transform: translateY(0) translateX(-50%); }
-        }
+        .guest-dropdown { animation: slideDown 0.2s ease-out; pointer-events: none; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px) translateX(-50%); } to { opacity: 1; transform: translateY(0) translateX(-50%); } }
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
 </head>
 <body>
@@ -43,26 +35,32 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        const TableVisual = ({ guests, tableNumber, size = "large" }) => {
-            const guestList = guests.split(',').map(g => g.trim()).filter(g => g !== "");
+        const STORAGE_KEY_LAYOUT = 'wedding_planner_persistent_layout';
+        const STORAGE_KEY_MENU = 'wedding_planner_persistent_menu';
+
+        const TableVisual = ({ table, size = "large" }) => {
+            const guests = table.guests || [];
             const isSmall = size === "small";
             const radius = isSmall ? 40 : 75; 
             const centerX = isSmall ? 50 : 100;
             const centerY = isSmall ? 50 : 100;
 
             return (
-                <div className={`relative ${isSmall ? 'w-24 h-24' : 'w-52 h-52'} bg-white rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center shadow-md transition-shadow hover:shadow-lg`}>
+                <div className={`relative ${isSmall ? 'w-24 h-24' : 'w-52 h-52'} bg-white rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center shadow-md`}>
                     <div className={`${isSmall ? 'w-12 h-12 text-[10px]' : 'w-24 h-24 text-base'} bg-slate-100 rounded-full shadow-inner flex items-center justify-center z-10 border border-slate-200`}>
-                        <span className="font-bold text-slate-600">{isSmall ? `T${tableNumber}` : `Table ${tableNumber}`}</span>
+                        <span className="font-bold text-slate-600">T{table.id}</span>
                     </div>
-
-                    {!isSmall && guestList.map((name, index) => {
-                        const angle = (index / guestList.length) * 2 * Math.PI - Math.PI / 2;
+                    {guests.map((guest, index) => {
+                        const angle = (index / guests.length) * 2 * Math.PI - Math.PI / 2;
                         const x = centerX + radius * Math.cos(angle);
                         const y = centerY + radius * Math.sin(angle);
                         return (
-                            <div key={index} className="absolute transform -translate-x-1/2 -translate-y-1/2 bg-blue-600 text-white px-2 py-0.5 rounded text-[9px] font-semibold shadow-sm whitespace-nowrap" style={{ left: `${x}px`, top: `${y}px` }}>
-                                {name}
+                            <div key={index} className="absolute transform -translate-x-1/2 -translate-y-1/2 z-20" style={{ left: `${x}px`, top: `${y}px` }}>
+                                {!isSmall ? (
+                                    <div className="bg-blue-600 text-white px-2 py-0.5 rounded text-[9px] font-semibold shadow-sm whitespace-nowrap">{guest.name}</div>
+                                ) : (
+                                    <div className="w-2 h-2 bg-blue-400 rounded-full border border-white"></div>
+                                )}
                             </div>
                         );
                     })}
@@ -73,127 +71,197 @@
         const App = () => {
             const [view, setView] = useState('input');
             const [hoveredId, setHoveredId] = useState(null);
-            const [tables, setTables] = useState(() => {
-                const saved = localStorage.getItem('wedding-layout-v4');
-                if (saved) return JSON.parse(saved);
-                return Array.from({ length: 6 }, (_, i) => ({ 
-                    id: i + 1, 
-                    guests: "", 
-                    x: 20 + (i * 130) % 600, 
-                    y: 20 + Math.floor(i / 3) * 150 
-                }));
-            });
-
             const [draggingId, setDraggingId] = useState(null);
             const canvasRef = useRef(null);
 
-            useEffect(() => {
-                localStorage.setItem('wedding-layout-v4', JSON.stringify(tables));
-            }, [tables]);
+            const [menu, setMenu] = useState(() => {
+                const saved = localStorage.getItem(STORAGE_KEY_MENU);
+                return saved ? JSON.parse(saved) : { starters: [""], mains: [""], desserts: [""] };
+            });
 
-            const updateTable = (id, field, value) => {
-                setTables(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+            const [tables, setTables] = useState(() => {
+                const saved = localStorage.getItem(STORAGE_KEY_LAYOUT);
+                if (saved) return JSON.parse(saved);
+                return Array.from({ length: 6 }, (_, i) => ({ 
+                    id: i + 1, guests: [], x: 20 + (i * 130) % 600, y: 20 + Math.floor(i / 3) * 150 
+                }));
+            });
+
+            useEffect(() => { localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(tables)); }, [tables]);
+            useEffect(() => { localStorage.setItem(STORAGE_KEY_MENU, JSON.stringify(menu)); }, [menu]);
+
+            const handleNameStringChange = (tableId, val) => {
+                const names = val.split(',').map(n => n.trim());
+                setTables(prev => prev.map(t => {
+                    if (t.id !== tableId) return t;
+                    const updatedGuests = names.map((name, i) => {
+                        const existing = t.guests[i];
+                        return {
+                            name: name,
+                            starter: existing?.starter || "",
+                            main: existing?.main || "",
+                            dessert: existing?.dessert || "",
+                            dietary: existing?.dietary || ""
+                        };
+                    }).filter((g, i) => i < names.length);
+                    return { ...t, guests: updatedGuests };
+                }));
             };
 
-            const handlePointerDown = (id) => {
-                setDraggingId(id);
-                setHoveredId(null); // Hide list while dragging
+            const updateGuest = (tableId, gIndex, field, val) => {
+                setTables(prev => prev.map(t => {
+                    if (t.id !== tableId) return t;
+                    const updated = [...t.guests];
+                    updated[gIndex] = { ...updated[gIndex], [field]: val };
+                    return { ...t, guests: updated };
+                }));
             };
 
             const handlePointerMove = (e) => {
                 if (draggingId === null) return;
                 const rect = canvasRef.current.getBoundingClientRect();
-                const newX = e.clientX - rect.left - 48; 
-                const newY = e.clientY - rect.top - 48;
-                updateTable(draggingId, 'x', newX);
-                updateTable(draggingId, 'y', newY);
+                setTables(prev => prev.map(t => t.id === draggingId ? { ...t, x: e.clientX - rect.left - 48, y: e.clientY - rect.top - 48 } : t));
             };
 
-            const handlePointerUp = () => setDraggingId(null);
+            // Summary Logic
+            const getTally = () => {
+                const totals = { starters: {}, mains: {}, desserts: {}, totalGuests: 0, dietaryNotes: [] };
+                tables.forEach(t => {
+                    t.guests.forEach(g => {
+                        if (!g.name) return;
+                        totals.totalGuests++;
+                        if (g.starter) totals.starters[g.starter] = (totals.starters[g.starter] || 0) + 1;
+                        if (g.main) totals.mains[g.main] = (totals.mains[g.main] || 0) + 1;
+                        if (g.dessert) totals.desserts[g.dessert] = (totals.desserts[g.dessert] || 0) + 1;
+                        if (g.dietary) totals.dietaryNotes.push(`${g.name} (T${t.id}): ${g.dietary}`);
+                    });
+                });
+                return totals;
+            };
+
+            const generateCSV = () => {
+                let csv = "Table#Name#Starter#Main#Dessert#Dietary\n";
+                tables.forEach(t => {
+                    t.guests.forEach(g => {
+                        if (!g.name) return;
+                        csv += `${t.id}#${g.name}#${g.starter || ''}#${g.main || ''}#${g.dessert || ''}#${g.dietary || ''}\n`;
+                    });
+                });
+                return csv;
+            };
+
+            const tally = getTally();
 
             return (
-                <div className="p-6 max-w-6xl mx-auto h-screen flex flex-col">
+                <div className="p-6 max-w-7xl mx-auto h-screen flex flex-col">
                     <header className="flex justify-between items-center mb-6">
-                        <div>
-                            <h1 className="text-2xl font-bold text-slate-800">Wedding Seating Planner</h1>
-                            <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold">Brighton Venue Layout</p>
-                        </div>
-                        <div className="flex bg-slate-200 p-1 rounded-lg">
-                            <button onClick={() => setView('input')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${view === 'input' ? 'bg-white shadow text-blue-600' : 'text-slate-600 hover:text-slate-900'}`}>List View</button>
-                            <button onClick={() => setView('plan')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${view === 'plan' ? 'bg-white shadow text-blue-600' : 'text-slate-600 hover:text-slate-900'}`}>Floor Plan</button>
+                        <h1 className="text-2xl font-bold text-slate-800 font-serif">Meal Planner 1</h1>
+                        <div className="flex bg-slate-200 p-1 rounded-xl shadow-inner">
+                            {['input', 'menu', 'plan', 'summary'].map(v => (
+                                <button key={v} onClick={() => setView(v)} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${view === v ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>
+                                    {v === 'input' ? 'Guests' : v === 'menu' ? 'Menu' : v === 'plan' ? 'Floor Plan' : 'Summary & Export'}
+                                </button>
+                            ))}
                         </div>
                     </header>
 
-                    {view === 'input' ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-10">
+                    {view === 'menu' && (
+                        <div className="grid grid-cols-3 gap-6">
+                            {['starters', 'mains', 'desserts'].map(cat => (
+                                <div key={cat} className="bg-white p-6 rounded-xl border shadow-sm">
+                                    <h2 className="capitalize font-bold mb-4 text-slate-700">{cat}</h2>
+                                    {menu[cat].map((item, i) => (
+                                        <input key={i} className="w-full p-2 border rounded mb-2 text-sm" value={item} onChange={(e) => {
+                                            const next = [...menu[cat]]; next[i] = e.target.value;
+                                            setMenu({...menu, [cat]: next});
+                                        }}/>
+                                    ))}
+                                    <button onClick={() => setMenu({...menu, [cat]: [...menu[cat], ""]})} className="text-blue-600 text-[10px] font-bold">+ ADD {cat.toUpperCase()}</button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {view === 'input' && (
+                        <div className="flex-1 overflow-y-auto space-y-8 pb-20 custom-scroll">
                             {tables.map(table => (
-                                <div key={table.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                                    <h2 className="font-bold mb-3 text-slate-700">Table {table.id}</h2>
-                                    <input
-                                        type="text"
-                                        placeholder="Enter names, comma separated..."
-                                        className="w-full p-2 border border-slate-200 rounded mb-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                        value={table.guests}
-                                        onChange={(e) => updateTable(table.id, 'guests', e.target.value)}
-                                    />
-                                    <div className="flex justify-center h-48">
-                                        <TableVisual guests={table.guests} tableNumber={table.id} />
+                                <div key={table.id} className="bg-white p-6 rounded-xl border shadow-sm grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                    <div className="lg:col-span-1 border-r pr-8">
+                                        <h2 className="font-bold text-lg text-slate-800 mb-4">Table {table.id}</h2>
+                                        <textarea className="w-full p-3 border rounded h-32 text-sm bg-slate-50" value={table.guests.map(g => g.name).join(', ')} onChange={(e) => handleNameStringChange(table.id, e.target.value)} placeholder="Names..."/>
+                                        <div className="flex justify-center mt-6"><TableVisual table={table} /></div>
+                                    </div>
+                                    <div className="lg:col-span-2 space-y-2">
+                                        {table.guests.map((g, i) => (
+                                            <div key={i} className="flex gap-2 items-center bg-white p-2 rounded border shadow-sm">
+                                                <span className="w-24 text-[11px] font-bold text-slate-700 truncate">{g.name}</span>
+                                                {['starter', 'main', 'dessert'].map(course => (
+                                                    <select key={course} className="text-[10px] p-1 border rounded w-28" value={g[course]} onChange={(e) => updateGuest(table.id, i, course, e.target.value)}>
+                                                        <option value="">{course}...</option>
+                                                        {menu[course + 's'].filter(m => m).map(m => <option key={m} value={m}>{m}</option>)}
+                                                    </select>
+                                                ))}
+                                                <input className="flex-1 text-[10px] p-1 border rounded" placeholder="Dietary..." value={g.dietary} onChange={(e) => updateGuest(table.id, i, 'dietary', e.target.value)}/>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             ))}
                         </div>
-                    ) : (
-                        <div className="flex-1 relative">
-                            <div 
-                                ref={canvasRef}
-                                className="floor-canvas"
-                                onPointerMove={handlePointerMove}
-                                onPointerUp={handlePointerUp}
-                                onPointerLeave={() => { handlePointerUp(); setHoveredId(null); }}
-                            >
-                                {tables.map(table => {
-                                    const guestList = table.guests.split(',').map(g => g.trim()).filter(g => g !== "");
-                                    
-                                    return (
-                                        <div 
-                                            key={table.id}
-                                            onPointerDown={() => handlePointerDown(table.id)}
-                                            onMouseEnter={() => !draggingId && setHoveredId(table.id)}
-                                            onMouseLeave={() => setHoveredId(null)}
-                                            className="absolute draggable-table"
-                                            style={{ 
-                                                left: `${table.x}px`, 
-                                                top: `${table.y}px`,
-                                                zIndex: draggingId === table.id || hoveredId === table.id ? 50 : 10
-                                            }}
-                                        >
-                                            {/* Hover Dropdown */}
-                                            {hoveredId === table.id && guestList.length > 0 && (
-                                                <div className="guest-dropdown absolute bottom-full left-1/2 mb-2 w-40 bg-slate-800 text-white rounded-lg shadow-xl p-3 z-[60]">
-                                                    <div className="text-[10px] uppercase text-slate-400 mb-2 border-b border-slate-700 pb-1">Seating Order</div>
-                                                    <ul className="text-xs space-y-1">
-                                                        {guestList.map((name, i) => (
-                                                            <li key={i} className="truncate">
-                                                                <span className="text-slate-500 mr-2">{i + 1}.</span>
-                                                                {name}
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                    <div className="absolute w-2 h-2 bg-slate-800 rotate-45 left-1/2 -bottom-1 -translate-x-1/2"></div>
-                                                </div>
-                                            )}
+                    )}
 
-                                            <TableVisual guests={table.guests} tableNumber={table.id} size="small" />
-                                            <div className="text-center mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                                                {guestList.length} Guests
+                    {view === 'plan' && (
+                        <div className="flex-1 relative">
+                            <div ref={canvasRef} className="floor-canvas" onPointerMove={handlePointerMove} onPointerUp={() => setDraggingId(null)}>
+                                {tables.map(table => (
+                                    <div key={table.id} onPointerDown={() => setDraggingId(table.id)} onMouseEnter={() => !draggingId && setHoveredId(table.id)} onMouseLeave={() => setHoveredId(null)} className="absolute draggable-table" style={{ left: `${table.x}px`, top: `${table.y}px`, zIndex: hoveredId === table.id ? 100 : 10 }}>
+                                        {hoveredId === table.id && table.guests.some(g => g.name) && (
+                                            <div className="guest-dropdown absolute top-full left-1/2 mt-2 w-64 bg-slate-900 text-white rounded-lg p-3 z-[110] shadow-2xl">
+                                                <div className="absolute w-2 h-2 bg-slate-900 rotate-45 left-1/2 -top-1 -translate-x-1/2"></div>
+                                                {table.guests.filter(g => g.name).map((g, i) => (
+                                                    <div key={i} className="mb-2 text-[10px] border-b border-slate-800 pb-1 last:border-0">
+                                                        <div className="font-bold text-blue-400">{g.name}</div>
+                                                        <div className="text-slate-400 truncate">{g.starter || '—'}, {g.main || '—'}, {g.dessert || '—'}</div>
+                                                        {g.dietary && <div className="text-red-400 font-bold">⚠️ {g.dietary}</div>}
+                                                    </div>
+                                                ))}
                                             </div>
-                                        </div>
-                                    );
-                                })}
+                                        )}
+                                        <TableVisual table={table} size="small" />
+                                    </div>
+                                ))}
                             </div>
-                            <p className="mt-4 text-sm text-slate-500 italic text-center font-medium">
-                                Drag tables to arrange. Hover over a table to see the guest list.
-                            </p>
+                        </div>
+                    )}
+
+                    {view === 'summary' && (
+                        <div className="flex-1 overflow-y-auto space-y-6 pb-20 custom-scroll">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                    <h2 className="font-bold text-slate-800 mb-4 border-b pb-2">Kitchen Count (Total: {tally.totalGuests})</h2>
+                                    <div className="space-y-4">
+                                        {['starters', 'mains', 'desserts'].map(cat => (
+                                            <div key={cat}>
+                                                <h3 className="capitalize text-xs font-black text-slate-400 mb-2">{cat}</h3>
+                                                {Object.entries(tally[cat]).map(([name, count]) => (
+                                                    <div key={name} className="flex justify-between text-sm py-1 border-b border-slate-50">
+                                                        <span>{name}</span><span className="font-bold">{count}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <h2 className="font-bold text-slate-800 mt-6 mb-4 border-b pb-2 text-red-600">Dietary Alerts</h2>
+                                    <ul className="text-xs space-y-1">
+                                        {tally.dietaryNotes.map((note, i) => <li key={i} className="bg-red-50 p-2 rounded border border-red-100">{note}</li>)}
+                                    </ul>
+                                </div>
+                                <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                    <h2 className="font-bold text-slate-800 mb-4 border-b pb-2">Export Data (# Separated)</h2>
+                                    <p className="text-[10px] text-slate-500 mb-4 italic">Copy and paste this into Excel or Google Sheets. Use "Split Text to Columns" with # as the delimiter.</p>
+                                    <textarea readOnly className="w-full h-96 p-4 bg-slate-50 border rounded font-mono text-[10px]" value={generateCSV()}/>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -205,3 +273,4 @@
     </script>
 </body>
 </html>
+
