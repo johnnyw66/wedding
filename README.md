@@ -6,7 +6,7 @@ Download 'index.hml' onto your Mac/Windows PC. Save in a directory named 'weddin
 
 ## New meal.html
 
-An enhanced version of index.html - allowing meal planning. Simply open this web page in Chrome.
+An enhanced version of index.html - allowing meal planning. Simply open this web page in Chrome instead of index.html.
 
 
 
