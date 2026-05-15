@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wedding Manager</title>
+    <title>Wedding Manager - Draggable Seating</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -39,7 +39,6 @@
         .editable-title {
             border: 1px solid transparent;
             transition: all 0.2s;
-            /* Doubled character width visually */
             min-width: 400px;
         }
         .editable-title:hover {
@@ -53,6 +52,22 @@
             border-radius: 4px;
             padding: 0 8px;
         }
+
+        /* New Styles for Draggable Guest Labels */
+        .guest-label {
+            cursor: move;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+        .guest-label:hover {
+            background-color: #1d4ed8; /* Darker blue on hover */
+        }
+        .guest-label.dragging {
+            opacity: 0.5;
+            transform: scale(1.1);
+        }
+        .guest-label.drag-over {
+            border: 2px solid #fbbf24; /* Yellow border when something is dragged over it */
+        }
     </style>
 </head>
 <body>
@@ -65,12 +80,37 @@
         const STORAGE_KEY_MENU = 'wedding_planner_persistent_menu';
         const STORAGE_KEY_TITLE = 'wedding_planner_persistent_title';
 
-        const TableVisual = ({ table, size = "large" }) => {
+        const TableVisual = ({ table, size = "large", onSwapGuests }) => {
             const guests = table.guests || [];
             const isSmall = size === "small";
             const radius = isSmall ? 40 : 75; 
             const centerX = isSmall ? 50 : 100;
             const centerY = isSmall ? 50 : 100;
+
+            const [draggedIndex, setDraggedIndex] = useState(null);
+            const [dragOverIndex, setDragOverIndex] = useState(null);
+
+            const handleDragStart = (e, index) => {
+                if (isSmall) return;
+                setDraggedIndex(index);
+                e.dataTransfer.effectAllowed = "move";
+            };
+
+            const handleDragOver = (e, index) => {
+                if (isSmall) return;
+                e.preventDefault();
+                setDragOverIndex(index);
+            };
+
+            const handleDrop = (e, targetIndex) => {
+                if (isSmall) return;
+                e.preventDefault();
+                if (draggedIndex !== null && draggedIndex !== targetIndex) {
+                    onSwapGuests(table.id, draggedIndex, targetIndex);
+                }
+                setDraggedIndex(null);
+                setDragOverIndex(null);
+            };
 
             return (
                 <div className={`relative ${isSmall ? 'w-24 h-24' : 'w-52 h-52'} bg-white rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center shadow-md`}>
@@ -81,10 +121,24 @@
                         const angle = (index / guests.length) * 2 * Math.PI - Math.PI / 2;
                         const x = centerX + radius * Math.cos(angle);
                         const y = centerY + radius * Math.sin(angle);
+                        
                         return (
-                            <div key={index} className="absolute transform -translate-x-1/2 -translate-y-1/2 z-20" style={{ left: `${x}px`, top: `${y}px` }}>
+                            <div 
+                                key={index} 
+                                className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-20 ${!isSmall ? 'guest-label' : ''} 
+                                    ${draggedIndex === index ? 'dragging' : ''} 
+                                    ${dragOverIndex === index ? 'drag-over' : ''}`}
+                                style={{ left: `${x}px`, top: `${y}px` }}
+                                draggable={!isSmall}
+                                onDragStart={(e) => handleDragStart(e, index)}
+                                onDragOver={(e) => handleDragOver(e, index)}
+                                onDragLeave={() => setDragOverIndex(null)}
+                                onDrop={(e) => handleDrop(e, index)}
+                            >
                                 {!isSmall ? (
-                                    <div className="bg-blue-600 text-white px-2 py-0.5 rounded text-[9px] font-semibold shadow-sm whitespace-nowrap">{guest.name}</div>
+                                    <div className="bg-blue-600 text-white px-2 py-0.5 rounded text-[9px] font-semibold shadow-sm whitespace-nowrap select-none">
+                                        {guest.name}
+                                    </div>
                                 ) : (
                                     <div className="w-2 h-2 bg-blue-400 rounded-full border border-white"></div>
                                 )}
@@ -164,6 +218,17 @@
                         };
                     }).filter((g, i) => i < names.length);
                     return { ...t, guests: updatedGuests };
+                }));
+            };
+
+            const swapGuests = (tableId, indexA, indexB) => {
+                setTables(prev => prev.map(t => {
+                    if (t.id !== tableId) return t;
+                    const newGuests = [...t.guests];
+                    const temp = newGuests[indexA];
+                    newGuests[indexA] = newGuests[indexB];
+                    newGuests[indexB] = temp;
+                    return { ...t, guests: newGuests };
                 }));
             };
 
@@ -252,11 +317,12 @@
                                     <button onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})} className="text-[10px] font-bold text-slate-400 hover:text-blue-600 uppercase transition-colors">↑ Top</button>
                                 </div>
 
-                                <div className="flex items-center gap-6">
-                                    <div className="hidden md:block text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                <div className="flex items-center gap-6 text-slate-500 italic text-[10px]">
+                                    Tip: Drag names around the table to reorder.
+                                    <div className="hidden md:block text-[10px] font-black uppercase text-slate-400 tracking-widest not-italic">
                                         Total Guests: <span className="text-blue-600">{tally.totalGuests}</span>
                                     </div>
-                                    <button onClick={addTable} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-md transition-all">
+                                    <button onClick={addTable} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-md transition-all not-italic">
                                         + Add Table
                                     </button>
                                 </div>
@@ -269,7 +335,9 @@
                                         <div className="lg:col-span-1 border-r pr-8">
                                             <h2 className="font-bold text-lg text-slate-800 mb-4">Table {table.id}</h2>
                                             <textarea className="w-full p-3 border rounded h-32 text-sm bg-slate-50 focus:ring-2 focus:ring-blue-400 outline-none" value={table.guests.map(g => g.name).join(', ')} onChange={(e) => handleNameStringChange(table.id, e.target.value)} placeholder="Alice, Bob, Charlie..."/>
-                                            <div className="flex justify-center mt-6"><TableVisual table={table} /></div>
+                                            <div className="flex justify-center mt-6">
+                                                <TableVisual table={table} onSwapGuests={swapGuests} />
+                                            </div>
                                         </div>
                                         <div className="lg:col-span-2 space-y-2">
                                             {table.guests.map((g, i) => (
