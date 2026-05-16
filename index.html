@@ -83,9 +83,47 @@
         const TableVisual = ({ table, size = "large", onSwapGuests }) => {
             const guests = table.guests || [];
             const isSmall = size === "small";
-            const radius = isSmall ? 40 : 75; 
-            const centerX = isSmall ? 50 : 100;
-            const centerY = isSmall ? 50 : 100;
+            const shape = table.shape || 'circular';
+            
+            let centerX, centerY, a, b;
+            let containerClass, innerTableClass;
+
+            // Geometry calculations mapping standard circular nodes cleanly onto rectangles
+            if (isSmall) {
+                if (shape === 'horizontal') {
+                    containerClass = `w-32 h-16 rounded-xl`;
+                    innerTableClass = `w-16 h-8 text-[9px] rounded-md`;
+                    centerX = 64; centerY = 32;
+                    a = 48; b = 22;
+                } else if (shape === 'vertical') {
+                    containerClass = `w-16 h-32 rounded-xl`;
+                    innerTableClass = `w-8 h-16 text-[9px] rounded-md`;
+                    centerX = 32; centerY = 64;
+                    a = 22; b = 48;
+                } else { 
+                    containerClass = `w-24 h-24 rounded-full`;
+                    innerTableClass = `w-12 h-12 text-[10px] rounded-full`;
+                    centerX = 48; centerY = 48;
+                    a = 38; b = 38;
+                }
+            } else {
+                if (shape === 'horizontal') {
+                    containerClass = `w-64 h-40 rounded-2xl`;
+                    innerTableClass = `w-36 h-18 text-base rounded-xl`;
+                    centerX = 128; centerY = 80;
+                    a = 105; b = 62;
+                } else if (shape === 'vertical') {
+                    containerClass = `w-40 h-64 rounded-2xl`;
+                    innerTableClass = `w-18 h-36 text-base rounded-xl`;
+                    centerX = 80; centerY = 128;
+                    a = 62; b = 105;
+                } else { 
+                    containerClass = `w-52 h-52 rounded-full`;
+                    innerTableClass = `w-24 h-24 text-base rounded-full`;
+                    centerX = 104; centerY = 104;
+                    a = 75; b = 75;
+                }
+            }
 
             const [draggedIndex, setDraggedIndex] = useState(null);
             const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -115,14 +153,27 @@
             const isOverCapacity = guests.filter(g => g.name).length > (table.maxCapacity || 10);
 
             return (
-                <div className={`relative ${isSmall ? 'w-24 h-24' : 'w-52 h-52'} bg-white rounded-full border-2 border-dashed ${isOverCapacity ? 'border-red-500 bg-red-50/30' : 'border-slate-300'} flex items-center justify-center shadow-md transition-colors`}>
-                    <div className={`${isSmall ? 'w-12 h-12 text-[10px]' : 'w-24 h-24 text-base'} ${isOverCapacity ? 'bg-red-100 border-red-300' : 'bg-slate-100 border-slate-200'} rounded-full shadow-inner flex items-center justify-center z-10 border`}>
+                <div className={`relative ${containerClass} bg-white border-2 border-dashed ${isOverCapacity ? 'border-red-500 bg-red-50/30' : 'border-slate-300'} flex items-center justify-center shadow-md transition-colors`}>
+                    <div className={`${innerTableClass} ${isOverCapacity ? 'bg-red-100 border-red-300' : 'bg-slate-100 border-slate-200'} shadow-inner flex items-center justify-center z-10 border`}>
                         <span className={`font-bold ${isOverCapacity ? 'text-red-600' : 'text-slate-600'}`}>T{table.id}</span>
                     </div>
                     {guests.map((guest, index) => {
                         const angle = (index / guests.length) * 2 * Math.PI - Math.PI / 2;
-                        const x = centerX + radius * Math.cos(angle);
-                        const y = centerY + radius * Math.sin(angle);
+                        const cos = Math.cos(angle);
+                        const sin = Math.sin(angle);
+                        
+                        let x, y;
+                        if (shape === 'circular') {
+                            x = centerX + a * cos;
+                            y = centerY + b * sin;
+                        } else {
+                            // Unified Ray intersection stretching formulas to warp circle spacing onto rect perimeters cleanly
+                            const rX = Math.abs(cos) > 1e-6 ? a / Math.abs(cos) : Infinity;
+                            const rY = Math.abs(sin) > 1e-6 ? b / Math.abs(sin) : Infinity;
+                            const r = Math.min(rX, rY);
+                            x = centerX + r * cos;
+                            y = centerY + r * sin;
+                        }
                         
                         return (
                             <div 
@@ -172,7 +223,7 @@
             const [tables, setTables] = useState(() => {
                 const saved = localStorage.getItem(STORAGE_KEY_LAYOUT);
                 if (saved) return JSON.parse(saved);
-                return [{ id: 1, guests: [], x: 50, y: 50, maxCapacity: 10 }];
+                return [{ id: 1, guests: [], x: 50, y: 50, maxCapacity: 10, shape: 'circular' }];
             });
 
             const [holdingArea, setHoldingArea] = useState(() => {
@@ -211,7 +262,11 @@
                             if (window.confirm("This will overwrite your local configuration. Continue?")) {
                                 setAppTitle(parsedData.title);
                                 setMenu(parsedData.menu);
-                                setTables(parsedData.tables.map(t => ({ ...t, maxCapacity: t.maxCapacity || 10 })));
+                                setTables(parsedData.tables.map(t => ({ 
+                                    ...t, 
+                                    maxCapacity: t.maxCapacity || 10,
+                                    shape: t.shape || 'circular' 
+                                })));
                                 setHoldingArea(parsedData.holdingArea || []);
                                 setSelectedHeldGuestIndex("");
                             }
@@ -232,7 +287,8 @@
                     guests: [],
                     x: 50 + (tables.length * 40) % 400,
                     y: 50 + (tables.length * 40) % 300,
-                    maxCapacity: 10
+                    maxCapacity: 10,
+                    shape: 'circular'
                 };
                 setTables([...tables, newTable]);
             };
@@ -245,6 +301,10 @@
 
             const updateTableCapacity = (id, capacity) => {
                 setTables(prev => prev.map(t => t.id === id ? { ...t, maxCapacity: parseInt(capacity) || 10 } : t));
+            };
+
+            const updateTableShape = (id, shape) => {
+                setTables(prev => prev.map(t => t.id === id ? { ...t, shape } : t));
             };
 
             const jumpToTable = (id) => {
@@ -329,7 +389,19 @@
             const handlePointerMove = (e) => {
                 if (draggingId === null) return;
                 const rect = canvasRef.current.getBoundingClientRect();
-                setTables(prev => prev.map(t => t.id === draggingId ? { ...t, x: e.clientX - rect.left - 48, y: e.clientY - rect.top - 48 } : t));
+                
+                setTables(prev => prev.map(t => {
+                    if (t.id !== draggingId) return t;
+                    const tShape = t.shape || 'circular';
+                    
+                    // Adjust drag anchor dynamically based on the rendered aspect ratios on the floor plan
+                    let halfW = 48; 
+                    let halfH = 48;
+                    if (tShape === 'horizontal') { halfW = 64; halfH = 32; }
+                    if (tShape === 'vertical') { halfW = 32; halfH = 64; }
+
+                    return { ...t, x: e.clientX - rect.left - halfW, y: e.clientY - rect.top - halfH };
+                }));
             };
 
             const getTally = () => {
@@ -475,7 +547,7 @@
                                             <button onClick={() => removeTable(table.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 font-bold text-xl px-2 transition-colors">×</button>
                                             
                                             <div className="lg:col-span-1 border-r pr-8">
-                                                <div className="flex justify-between items-start mb-4">
+                                                <div className="flex justify-between items-start mb-4 gap-2">
                                                     <div>
                                                         <h2 className="font-bold text-lg text-slate-800">Table {table.id}</h2>
                                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isOver ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-slate-100 text-slate-600'}`}>
@@ -483,16 +555,32 @@
                                                         </span>
                                                     </div>
                                                     
-                                                    <div className="text-right">
-                                                        <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">Max Seats</label>
-                                                        <input 
-                                                            type="number" 
-                                                            min="1"
-                                                            max="20"
-                                                            value={maxCap}
-                                                            onChange={(e) => updateTableCapacity(table.id, e.target.value)}
-                                                            className="w-12 text-center text-xs p-1 border rounded bg-slate-50 font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-400 outline-none"
-                                                        />
+                                                    <div className="flex gap-2">
+                                                        {/* Shape Selector Field */}
+                                                        <div className="text-right">
+                                                            <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">Shape</label>
+                                                            <select
+                                                                value={table.shape || 'circular'}
+                                                                onChange={(e) => updateTableShape(table.id, e.target.value)}
+                                                                className="text-[11px] p-1 border rounded bg-slate-50 font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-400 outline-none cursor-pointer"
+                                                            >
+                                                                <option value="circular">🔵 Circle</option>
+                                                                <option value="horizontal">▬ Rectangle (H)</option>
+                                                                <option value="vertical">▮ Rectangle (V)</option>
+                                                            </select>
+                                                        </div>
+
+                                                        <div className="text-right">
+                                                            <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">Max Seats</label>
+                                                            <input 
+                                                                type="number" 
+                                                                min="1"
+                                                                max="20"
+                                                                value={maxCap}
+                                                                onChange={(e) => updateTableCapacity(table.id, e.target.value)}
+                                                                className="w-12 text-center text-xs p-1 border rounded bg-slate-50 font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-400 outline-none"
+                                                            />
+                                                        </div>
                                                     </div>
                                                 </div>
 
@@ -561,6 +649,7 @@
                                                     ))}
                                                 </div>
                                             )}
+                                            {/* Render small aspect ratio accurate structures on floor canvas mapping custom shapes perfectly */}
                                             <TableVisual table={table} size="small" />
                                             {isOver && <div className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold shadow animate-bounce">!</div>}
                                         </div>
