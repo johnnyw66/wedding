@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wedding Manager - Draggable Seating</title>
+    <title>Wedding Manager - Interactive Seating</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -53,20 +53,19 @@
             padding: 0 8px;
         }
 
-        /* New Styles for Draggable Guest Labels */
         .guest-label {
             cursor: move;
             transition: transform 0.2s, background-color 0.2s;
         }
         .guest-label:hover {
-            background-color: #1d4ed8; /* Darker blue on hover */
+            background-color: #1d4ed8; 
         }
         .guest-label.dragging {
             opacity: 0.5;
             transform: scale(1.1);
         }
         .guest-label.drag-over {
-            border: 2px solid #fbbf24; /* Yellow border when something is dragged over it */
+            border: 2px solid #fbbf24; 
         }
     </style>
 </head>
@@ -79,6 +78,7 @@
         const STORAGE_KEY_LAYOUT = 'wedding_planner_persistent_layout';
         const STORAGE_KEY_MENU = 'wedding_planner_persistent_menu';
         const STORAGE_KEY_TITLE = 'wedding_planner_persistent_title';
+        const STORAGE_KEY_HOLDING = 'wedding_planner_persistent_holding';
 
         const TableVisual = ({ table, size = "large", onSwapGuests }) => {
             const guests = table.guests || [];
@@ -112,10 +112,12 @@
                 setDragOverIndex(null);
             };
 
+            const isOverCapacity = guests.filter(g => g.name).length > (table.maxCapacity || 10);
+
             return (
-                <div className={`relative ${isSmall ? 'w-24 h-24' : 'w-52 h-52'} bg-white rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center shadow-md`}>
-                    <div className={`${isSmall ? 'w-12 h-12 text-[10px]' : 'w-24 h-24 text-base'} bg-slate-100 rounded-full shadow-inner flex items-center justify-center z-10 border border-slate-200`}>
-                        <span className="font-bold text-slate-600">T{table.id}</span>
+                <div className={`relative ${isSmall ? 'w-24 h-24' : 'w-52 h-52'} bg-white rounded-full border-2 border-dashed ${isOverCapacity ? 'border-red-500 bg-red-50/30' : 'border-slate-300'} flex items-center justify-center shadow-md transition-colors`}>
+                    <div className={`${isSmall ? 'w-12 h-12 text-[10px]' : 'w-24 h-24 text-base'} ${isOverCapacity ? 'bg-red-100 border-red-300' : 'bg-slate-100 border-slate-200'} rounded-full shadow-inner flex items-center justify-center z-10 border`}>
+                        <span className={`font-bold ${isOverCapacity ? 'text-red-600' : 'text-slate-600'}`}>T{table.id}</span>
                     </div>
                     {guests.map((guest, index) => {
                         const angle = (index / guests.length) * 2 * Math.PI - Math.PI / 2;
@@ -156,6 +158,8 @@
             const canvasRef = useRef(null);
             const fileInputRef = useRef(null);
 
+            const [selectedHeldGuestIndex, setSelectedHeldGuestIndex] = useState("");
+
             const [appTitle, setAppTitle] = useState(() => {
                 return localStorage.getItem(STORAGE_KEY_TITLE) || 'Meal Planner';
             });
@@ -168,17 +172,22 @@
             const [tables, setTables] = useState(() => {
                 const saved = localStorage.getItem(STORAGE_KEY_LAYOUT);
                 if (saved) return JSON.parse(saved);
-                return [{ id: 1, guests: [], x: 50, y: 50 }];
+                return [{ id: 1, guests: [], x: 50, y: 50, maxCapacity: 10 }];
+            });
+
+            const [holdingArea, setHoldingArea] = useState(() => {
+                const saved = localStorage.getItem(STORAGE_KEY_HOLDING);
+                return saved ? JSON.parse(saved) : [];
             });
 
             useEffect(() => { localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(tables)); }, [tables]);
             useEffect(() => { localStorage.setItem(STORAGE_KEY_MENU, JSON.stringify(menu)); }, [menu]);
             useEffect(() => { localStorage.setItem(STORAGE_KEY_TITLE, appTitle); }, [appTitle]);
+            useEffect(() => { localStorage.setItem(STORAGE_KEY_HOLDING, JSON.stringify(holdingArea)); }, [holdingArea]);
 
-            // Export Backup File Logic
             const exportBackup = () => {
                 const dataString = "data:text/json;charset=utf-8," + encodeURIComponent(
-                    JSON.stringify({ title: appTitle, menu, tables })
+                    JSON.stringify({ title: appTitle, menu, tables, holdingArea })
                 );
                 const downloadAnchor = document.createElement('a');
                 downloadAnchor.setAttribute("href", dataString);
@@ -189,7 +198,6 @@
                 downloadAnchor.remove();
             };
 
-            // Import Backup File Logic
             const handleImportFile = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -203,16 +211,18 @@
                             if (window.confirm("This will overwrite your local configuration. Continue?")) {
                                 setAppTitle(parsedData.title);
                                 setMenu(parsedData.menu);
-                                setTables(parsedData.tables);
+                                setTables(parsedData.tables.map(t => ({ ...t, maxCapacity: t.maxCapacity || 10 })));
+                                setHoldingArea(parsedData.holdingArea || []);
+                                setSelectedHeldGuestIndex("");
                             }
                         } else {
-                            alert("Invalid file format. Ensure you upload a layout JSON generated from this app.");
+                            alert("Invalid file format.");
                         }
                     } catch (error) {
-                        alert("Error parsing file. Please try again.");
+                        alert("Error parsing file.");
                     }
                 };
-                e.target.value = ""; // Clear input selection
+                e.target.value = ""; 
             };
 
             const addTable = () => {
@@ -221,7 +231,8 @@
                     id: nextId,
                     guests: [],
                     x: 50 + (tables.length * 40) % 400,
-                    y: 50 + (tables.length * 40) % 300
+                    y: 50 + (tables.length * 40) % 300,
+                    maxCapacity: 10
                 };
                 setTables([...tables, newTable]);
             };
@@ -232,10 +243,14 @@
                 }
             };
 
+            const updateTableCapacity = (id, capacity) => {
+                setTables(prev => prev.map(t => t.id === id ? { ...t, maxCapacity: parseInt(capacity) || 10 } : t));
+            };
+
             const jumpToTable = (id) => {
                 const element = document.getElementById(`table-card-${id}`);
                 if (element) {
-                    const offset = 100;
+                    const offset = 140; 
                     const bodyRect = document.body.getBoundingClientRect().top;
                     const elementRect = element.getBoundingClientRect().top;
                     const elementPosition = elementRect - bodyRect;
@@ -269,7 +284,6 @@
                     const temp = newGuests[indexA];
                     newGuests[indexA] = newGuests[indexB];
                     newGuests[indexB] = temp;
-                    
                     return { ...t, guests: newGuests };
                 }));
             };
@@ -281,6 +295,35 @@
                     updated[gIndex] = { ...updated[gIndex], [field]: val };
                     return { ...t, guests: updated };
                 }));
+            };
+
+            const moveGuestToHolding = (tableId, guestIndex) => {
+                const tableTarget = tables.find(t => t.id === tableId);
+                if (!tableTarget) return;
+                
+                const guestToHold = tableTarget.guests[guestIndex];
+                if (!guestToHold || !guestToHold.name) return;
+
+                setHoldingArea([...holdingArea, guestToHold]);
+                setTables(prev => prev.map(t => {
+                    if (t.id !== tableId) return t;
+                    return { ...t, guests: t.guests.filter((_, idx) => idx !== guestIndex) };
+                }));
+            };
+
+            const assignGuestFromHolding = (tableId) => {
+                if (selectedHeldGuestIndex === "") return;
+                const index = parseInt(selectedHeldGuestIndex);
+                const guestToAssign = holdingArea[index];
+                if (!guestToAssign) return;
+
+                setTables(prev => prev.map(t => {
+                    if (t.id !== tableId) return t;
+                    return { ...t, guests: [...t.guests, guestToAssign] };
+                }));
+
+                setHoldingArea(prev => prev.filter((_, idx) => idx !== index));
+                setSelectedHeldGuestIndex(""); 
             };
 
             const handlePointerMove = (e) => {
@@ -317,28 +360,10 @@
                                 placeholder="Event Name..."
                                 size="40" 
                             />
-                            
-                            {/* New Backup Control Buttons */}
                             <div className="flex gap-2 w-full md:w-auto">
-                                <button 
-                                    onClick={exportBackup} 
-                                    className="flex-1 md:flex-none text-[10px] uppercase font-black tracking-wider bg-white border text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm transition-all"
-                                >
-                                    💾 Export File
-                                </button>
-                                <button 
-                                    onClick={() => fileInputRef.current.click()} 
-                                    className="flex-1 md:flex-none text-[10px] uppercase font-black tracking-wider bg-white border text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm transition-all"
-                                >
-                                    📂 Import File
-                                </button>
-                                <input 
-                                    type="file" 
-                                    ref={fileInputRef} 
-                                    onChange={handleImportFile} 
-                                    accept=".json" 
-                                    className="hidden" 
-                                />
+                                <button onClick={exportBackup} className="flex-1 md:flex-none text-[10px] uppercase font-black tracking-wider bg-white border text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm transition-all">💾 Export File</button>
+                                <button onClick={() => fileInputRef.current.click()} className="flex-1 md:flex-none text-[10px] uppercase font-black tracking-wider bg-white border text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm transition-all">📂 Import File</button>
+                                <input type="file" ref={fileInputRef} onChange={handleImportFile} accept=".json" className="hidden" />
                             </div>
                         </div>
                         
@@ -370,59 +395,148 @@
 
                     {view === 'input' && (
                         <div className="flex-1 pb-20">
-                            <div className="sticky-action-bar py-3 px-4 rounded-xl flex justify-between items-center mb-8 shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <select 
-                                        onChange={(e) => jumpToTable(e.target.value)}
-                                        className="text-xs p-2 border rounded-lg bg-white font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-400"
-                                        value=""
-                                    >
-                                        <option value="" disabled>Jump to Table...</option>
-                                        {tables.map(t => (
-                                            <option key={t.id} value={t.id}>Table {t.id} ({t.guests.filter(g => g.name).length} guests)</option>
-                                        ))}
-                                    </select>
-                                    <button onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})} className="text-[10px] font-bold text-slate-400 hover:text-blue-600 uppercase transition-colors">↑ Top</button>
+                            <div className="sticky-action-bar py-3 px-4 rounded-xl shadow-sm flex flex-col gap-3 mb-8">
+                                <div className="flex justify-between items-center w-full">
+                                    <div className="flex items-center gap-4">
+                                        <select onChange={(e) => jumpToTable(e.target.value)} className="text-xs p-2 border rounded-lg bg-white font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-400" value="">
+                                            <option value="" disabled>Jump to Table...</option>
+                                            {tables.map(t => (
+                                                <option key={t.id} value={t.id}>Table {t.id} ({t.guests.filter(g => g.name).length} guests)</option>
+                                            ))}
+                                        </select>
+                                        <button onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})} className="text-[10px] font-bold text-slate-400 hover:text-blue-600 uppercase transition-colors">↑ Top</button>
+                                    </div>
+
+                                    <div className="flex items-center gap-6 text-slate-500 italic text-[10px]">
+                                        Tip: Click any name chip directly in the clipboard to select them!
+                                        <div className="hidden md:block text-[10px] font-black uppercase text-slate-400 tracking-widest not-italic">
+                                            Total Guests: <span className="text-blue-600">{tally.totalGuests}</span>
+                                        </div>
+                                        <button onClick={addTable} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-md transition-all not-italic">
+                                            + Add Table
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <div className="flex items-center gap-6 text-slate-500 italic text-[10px]">
-                                    Tip: Drag names around the table to reorder.
-                                    <div className="hidden md:block text-[10px] font-black uppercase text-slate-400 tracking-widest not-italic">
-                                        Total Guests: <span className="text-blue-600">{tally.totalGuests}</span>
-                                    </div>
-                                    <button onClick={addTable} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-md transition-all not-italic">
-                                        + Add Table
-                                    </button>
+                                <div className="bg-slate-100 p-2.5 rounded-lg border border-slate-200 flex flex-wrap items-center gap-3">
+                                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">📋 Holding Clipboard:</span>
+                                    {holdingArea.length === 0 ? (
+                                        <span className="text-xs text-slate-400 italic">No unseated guests. Click 📥 on any guest row to park them here.</span>
+                                    ) : (
+                                        <div className="flex flex-wrap gap-2 items-center flex-1">
+                                            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scroll p-0.5">
+                                                {holdingArea.map((g, idx) => {
+                                                    const isSelected = selectedHeldGuestIndex === String(idx);
+                                                    return (
+                                                        <button 
+                                                            key={idx} 
+                                                            onClick={() => setSelectedHeldGuestIndex(String(idx))}
+                                                            className={`text-[10px] font-bold px-2.5 py-1 rounded-md shadow-sm transition-all text-left truncate max-w-[120px]
+                                                                ${isSelected 
+                                                                    ? 'bg-amber-500 text-white ring-2 ring-amber-300 ring-offset-1 font-black scale-105' 
+                                                                    : 'bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200'}`}
+                                                        >
+                                                            {g.name}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className="ml-auto flex items-center gap-2">
+                                                <select 
+                                                    className="text-[10px] font-bold border rounded p-1 bg-white outline-none text-slate-600 focus:ring-2 focus:ring-amber-400"
+                                                    value={selectedHeldGuestIndex}
+                                                    onChange={(e) => setSelectedHeldGuestIndex(e.target.value)}
+                                                >
+                                                    <option value="">Choose via dropdown...</option>
+                                                    {holdingArea.map((g, idx) => <option key={idx} value={idx}>{g.name}</option>)}
+                                                </select>
+                                                {selectedHeldGuestIndex !== "" && (
+                                                    <button 
+                                                        onClick={() => setSelectedHeldGuestIndex("")}
+                                                        className="text-[9px] uppercase font-bold text-slate-400 hover:text-slate-600 bg-white border px-1.5 py-1 rounded"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
                             <div className="space-y-12">
-                                {tables.map(table => (
-                                    <div key={table.id} id={`table-card-${table.id}`} className="bg-white p-6 rounded-xl border shadow-sm grid grid-cols-1 lg:grid-cols-3 gap-8 relative transition-all hover:border-blue-100">
-                                        <button onClick={() => removeTable(table.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 font-bold text-xl px-2 transition-colors">×</button>
-                                        <div className="lg:col-span-1 border-r pr-8">
-                                            <h2 className="font-bold text-lg text-slate-800 mb-4">Table {table.id}</h2>
-                                            <textarea className="w-full p-3 border rounded h-32 text-sm bg-slate-50 focus:ring-2 focus:ring-blue-400 outline-none" value={table.guests.map(g => g.name).join(', ')} onChange={(e) => handleNameStringChange(table.id, e.target.value)} placeholder="Alice, Bob, Charlie..."/>
-                                            <div className="flex justify-center mt-6">
-                                                <TableVisual table={table} onSwapGuests={swapGuests} />
+                                {tables.map(table => {
+                                    const seatCount = table.guests.filter(g => g.name).length;
+                                    const maxCap = table.maxCapacity || 10;
+                                    const isOver = seatCount > maxCap;
+
+                                    return (
+                                        <div key={table.id} id={`table-card-${table.id}`} className={`bg-white p-6 rounded-xl border shadow-sm grid grid-cols-1 lg:grid-cols-3 gap-8 relative transition-all ${isOver ? 'border-red-400 bg-red-50/5 hover:border-red-500' : 'hover:border-blue-100'}`}>
+                                            <button onClick={() => removeTable(table.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 font-bold text-xl px-2 transition-colors">×</button>
+                                            
+                                            <div className="lg:col-span-1 border-r pr-8">
+                                                <div className="flex justify-between items-start mb-4">
+                                                    <div>
+                                                        <h2 className="font-bold text-lg text-slate-800">Table {table.id}</h2>
+                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isOver ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-slate-100 text-slate-600'}`}>
+                                                            {seatCount} / {maxCap} Seats
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    <div className="text-right">
+                                                        <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">Max Seats</label>
+                                                        <input 
+                                                            type="number" 
+                                                            min="1"
+                                                            max="20"
+                                                            value={maxCap}
+                                                            onChange={(e) => updateTableCapacity(table.id, e.target.value)}
+                                                            className="w-12 text-center text-xs p-1 border rounded bg-slate-50 font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-400 outline-none"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <textarea className={`w-full p-3 border rounded h-32 text-sm bg-slate-50 focus:ring-2 outline-none transition-all ${isOver ? 'border-red-300 focus:ring-red-400 bg-red-50/20' : 'focus:ring-blue-400 border-slate-200'}`} value={table.guests.map(g => g.name).join(', ')} onChange={(e) => handleNameStringChange(table.id, e.target.value)} placeholder="Alice, Bob, Charlie..."/>
+                                                {isOver && <p className="text-[10px] text-red-600 font-bold mt-1">⚠️ Table capacity exceeded!</p>}
+                                                
+                                                {selectedHeldGuestIndex !== "" && (
+                                                    <button 
+                                                        onClick={() => assignGuestFromHolding(table.id)}
+                                                        className="w-full mt-3 bg-amber-500 text-white font-bold text-xs py-2 rounded-lg hover:bg-amber-600 shadow transition-colors uppercase tracking-wider"
+                                                    >
+                                                        📋 Drop {holdingArea[parseInt(selectedHeldGuestIndex)]?.name} Here
+                                                    </button>
+                                                )}
+
+                                                <div className="flex justify-center mt-6">
+                                                    <TableVisual table={table} onSwapGuests={swapGuests} />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="lg:col-span-2 space-y-2">
+                                                {table.guests.map((g, i) => (
+                                                    <div key={i} className="flex gap-2 items-center bg-white p-2 rounded border shadow-sm">
+                                                        <button 
+                                                            onClick={() => moveGuestToHolding(table.id, i)}
+                                                            title="Move guest to holding clipboard"
+                                                            className="text-slate-400 hover:text-amber-600 font-bold text-xs p-1 rounded hover:bg-amber-50 transition-colors"
+                                                        >
+                                                            📥
+                                                        </button>
+                                                        <span className="w-24 text-[11px] font-bold text-slate-700 truncate">{g.name || `Guest ${i+1}`}</span>
+                                                        {['starter', 'main', 'dessert'].map(course => (
+                                                            <select key={course} className="text-[10px] p-1 border rounded w-28 bg-slate-50" value={g[course]} onChange={(e) => updateGuest(table.id, i, course, e.target.value)}>
+                                                                <option value="">{course}...</option>
+                                                                {menu[course + 's'].filter(m => m).map(m => <option key={m} value={m}>{m}</option>)}
+                                                            </select>
+                                                        ))}
+                                                        <input className="flex-1 text-[10px] p-1 border rounded" placeholder="Dietary..." value={g.dietary} onChange={(e) => updateGuest(table.id, i, 'dietary', e.target.value)}/>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
-                                        <div className="lg:col-span-2 space-y-2">
-                                            {table.guests.map((g, i) => (
-                                                <div key={i} className="flex gap-2 items-center bg-white p-2 rounded border shadow-sm">
-                                                    <span className="w-24 text-[11px] font-bold text-slate-700 truncate">{g.name || `Guest ${i+1}`}</span>
-                                                    {['starter', 'main', 'dessert'].map(course => (
-                                                        <select key={course} className="text-[10px] p-1 border rounded w-28 bg-slate-50" value={g[course]} onChange={(e) => updateGuest(table.id, i, course, e.target.value)}>
-                                                            <option value="">{course}...</option>
-                                                            {menu[course + 's'].filter(m => m).map(m => <option key={m} value={m}>{m}</option>)}
-                                                        </select>
-                                                    ))}
-                                                    <input className="flex-1 text-[10px] p-1 border rounded" placeholder="Dietary..." value={g.dietary} onChange={(e) => updateGuest(table.id, i, 'dietary', e.target.value)}/>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
@@ -430,23 +544,28 @@
                     {view === 'plan' && (
                         <div className="flex-1 relative">
                             <div ref={canvasRef} className="floor-canvas" onPointerMove={handlePointerMove} onPointerUp={() => setDraggingId(null)}>
-                                {tables.map(table => (
-                                    <div key={table.id} onPointerDown={() => setDraggingId(table.id)} onMouseEnter={() => !draggingId && setHoveredId(table.id)} onMouseLeave={() => setHoveredId(null)} className="absolute draggable-table" style={{ left: `${table.x}px`, top: `${table.y}px`, zIndex: hoveredId === table.id ? 100 : 10 }}>
-                                        {hoveredId === table.id && table.guests.some(g => g.name) && (
-                                            <div className="guest-dropdown absolute top-full left-1/2 mt-2 w-64 bg-slate-900 text-white rounded-lg p-3 z-[110] shadow-2xl">
-                                                <div className="absolute w-2 h-2 bg-slate-900 rotate-45 left-1/2 -top-1 -translate-x-1/2"></div>
-                                                {table.guests.filter(g => g.name).map((g, i) => (
-                                                    <div key={i} className="mb-2 text-[10px] border-b border-slate-800 pb-1 last:border-0">
-                                                        <div className="font-bold text-blue-400">{g.name}</div>
-                                                        <div className="text-slate-400 truncate">{g.starter || '—'}, {g.main || '—'}, {g.dessert || '—'}</div>
-                                                        {g.dietary && <div className="text-red-400 font-bold">⚠️ {g.dietary}</div>}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                        <TableVisual table={table} size="small" />
-                                    </div>
-                                ))}
+                                {tables.map(table => {
+                                    const isOver = table.guests.filter(g => g.name).length > (table.maxCapacity || 10);
+                                    return (
+                                        <div key={table.id} onPointerDown={() => setDraggingId(table.id)} onMouseEnter={() => !draggingId && setHoveredId(table.id)} onMouseLeave={() => setHoveredId(null)} className="absolute draggable-table" style={{ left: `${table.x}px`, top: `${table.y}px`, zIndex: hoveredId === table.id ? 100 : 10 }}>
+                                            {hoveredId === table.id && table.guests.some(g => g.name) && (
+                                                <div className="guest-dropdown absolute top-full left-1/2 mt-2 w-64 bg-slate-900 text-white rounded-lg p-3 z-[110] shadow-2xl">
+                                                    <div className="absolute w-2 h-2 bg-slate-900 rotate-45 left-1/2 -top-1 -translate-x-1/2"></div>
+                                                    {isOver && <div className="text-[10px] text-red-400 font-black tracking-wide mb-1">⚠️ OVER CAPACITY ({table.guests.filter(g => g.name).length}/{table.maxCapacity || 10})</div>}
+                                                    {table.guests.filter(g => g.name).map((g, i) => (
+                                                        <div key={i} className="mb-2 text-[10px] border-b border-slate-800 pb-1 last:border-0">
+                                                            <div className="font-bold text-blue-400">{g.name}</div>
+                                                            <div className="text-slate-400 truncate">{g.starter || '—'}, {g.main || '—'}, {g.dessert || '—'}</div>
+                                                            {g.dietary && <div className="text-red-400 font-bold">⚠️ {g.dietary}</div>}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <TableVisual table={table} size="small" />
+                                            {isOver && <div className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold shadow animate-bounce">!</div>}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
