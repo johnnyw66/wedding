@@ -88,7 +88,6 @@
             let centerX, centerY, a, b;
             let containerClass, innerTableClass;
 
-            // Geometry calculations mapping standard circular nodes cleanly onto rectangles
             if (isSmall) {
                 if (shape === 'horizontal') {
                     containerClass = `w-32 h-16 rounded-xl`;
@@ -167,7 +166,6 @@
                             x = centerX + a * cos;
                             y = centerY + b * sin;
                         } else {
-                            // Unified Ray intersection stretching formulas to warp circle spacing onto rect perimeters cleanly
                             const rX = Math.abs(cos) > 1e-6 ? a / Math.abs(cos) : Infinity;
                             const rY = Math.abs(sin) > 1e-6 ? b / Math.abs(sin) : Infinity;
                             const r = Math.min(rX, rY);
@@ -304,7 +302,17 @@
             };
 
             const updateTableShape = (id, shape) => {
-                setTables(prev => prev.map(t => t.id === id ? { ...t, shape } : t));
+                setTables(prev => prev.map(t => {
+                    if (t.id !== draggingId) return t;
+                    const tShape = t.shape || 'circular';
+                    
+                    let halfW = 48; 
+                    let halfH = 48;
+                    if (tShape === 'horizontal') { halfW = 64; halfH = 32; }
+                    if (tShape === 'vertical') { halfW = 32; halfH = 64; }
+
+                    return { ...t, x: t.x, y: t.y };
+                }));
             };
 
             const jumpToTable = (id) => {
@@ -386,6 +394,18 @@
                 setSelectedHeldGuestIndex(""); 
             };
 
+            // NEW: Permanent Deletion from Holding Clipboard Area
+            const deleteGuestFromHolding = () => {
+                if (selectedHeldGuestIndex === "") return;
+                const index = parseInt(selectedHeldGuestIndex);
+                const guestToDelete = holdingArea[index];
+                
+                if (guestToDelete && window.confirm(`Are you sure you want to permanently delete ${guestToDelete.name}?`)) {
+                    setHoldingArea(prev => prev.filter((_, idx) => idx !== index));
+                    setSelectedHeldGuestIndex("");
+                }
+            };
+
             const handlePointerMove = (e) => {
                 if (draggingId === null) return;
                 const rect = canvasRef.current.getBoundingClientRect();
@@ -394,7 +414,6 @@
                     if (t.id !== draggingId) return t;
                     const tShape = t.shape || 'circular';
                     
-                    // Adjust drag anchor dynamically based on the rendered aspect ratios on the floor plan
                     let halfW = 48; 
                     let halfH = 48;
                     if (tShape === 'horizontal') { halfW = 64; halfH = 32; }
@@ -514,6 +533,15 @@
                                                 })}
                                             </div>
                                             <div className="ml-auto flex items-center gap-2">
+                                                {/* NEW: Permanent Deletion Action Trigger Trigger */}
+                                                {selectedHeldGuestIndex !== "" && (
+                                                    <button 
+                                                        onClick={deleteGuestFromHolding}
+                                                        className="text-[9px] uppercase font-black tracking-wider bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded shadow-sm transition-colors"
+                                                    >
+                                                        🗑️ Delete Permanently
+                                                    </button>
+                                                )}
                                                 <select 
                                                     className="text-[10px] font-bold border rounded p-1 bg-white outline-none text-slate-600 focus:ring-2 focus:ring-amber-400"
                                                     value={selectedHeldGuestIndex}
@@ -556,12 +584,14 @@
                                                     </div>
                                                     
                                                     <div className="flex gap-2">
-                                                        {/* Shape Selector Field */}
                                                         <div className="text-right">
                                                             <label className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">Shape</label>
                                                             <select
                                                                 value={table.shape || 'circular'}
-                                                                onChange={(e) => updateTableShape(table.id, e.target.value)}
+                                                                onChange={(e) => {
+                                                                    updateTableShape(table.id, e.target.value);
+                                                                    setTables(prev => prev.map(t => t.id === table.id ? { ...t, shape: e.target.value } : t));
+                                                                }}
                                                                 className="text-[11px] p-1 border rounded bg-slate-50 font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-400 outline-none cursor-pointer"
                                                             >
                                                                 <option value="circular">🔵 Circle</option>
@@ -649,7 +679,6 @@
                                                     ))}
                                                 </div>
                                             )}
-                                            {/* Render small aspect ratio accurate structures on floor canvas mapping custom shapes perfectly */}
                                             <TableVisual table={table} size="small" />
                                             {isOver && <div className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold shadow animate-bounce">!</div>}
                                         </div>
